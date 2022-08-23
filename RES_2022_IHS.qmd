@@ -1,0 +1,7 @@
+---
+title: Implementing and testing Integrated Hierarchical Sampling in R
+author: Lauren O'Brien
+date: 2022-08-31
+format: revealjs
+---
+
