@@ -3,5 +3,30 @@ title: Implementing and testing Integrated Hierarchical Sampling in R
 author: Lauren O'Brien
 date: 2022-08-31
 format: revealjs
+knitr:
+  opts_chunk:
+    message: false
+    warning: false
 ---
 
+## background slides go here
+
+# Implementation demo
+
+## Load covariates
+
+```{r}
+#| echo: true
+
+library(tidyverse) # wranglin'
+library(patchwork) # enhanced plot arrangement
+library(scico)     # plot aesthetics
+library(terra)     # the new 'raster'
+library(fclust)    # for the clustering
+library(scales)    # for rescaling covariates
+library(e1071)     # kurtosis check
+
+covs <- file.path()
+
+
+```

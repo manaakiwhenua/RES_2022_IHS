@@ -1,0 +1,52 @@
+---
+title: "Untitled"
+format: html
+editor: visual
+knitr:
+  opts_chunk:
+    comment: "#>"
+    collapse: true
+    fig.align: 'center'
+    echo: false
+    fig.show: 'hold'
+    results: 'hold'
+    message: false
+    warning: false
+---
+
+```{r}
+library(tidyverse)
+library(terra)
+library(sf)
+library(leaflet)
+
+
+
+
+
+```
+
+## Data for testing IHS
+
+Pulling out a patch of LiDAR near Levin, Manawatū-Whanganui, from data.linz.govt.nz
+
+```{r}
+#| column: screen
+
+leaflet() %>%
+  addTiles(urlTemplate = "https://basemaps.linz.govt.nz/v1/tiles/aerial/WebMercatorQuad/{z}/{x}/{y}.webp?api=c01gasx5z7qptvpjrc85ysfjzbj",
+           attribution = "© 2021 Land Information New Zealand") %>% 
+  setView(lat = -40.62454, lng = 175.32679, zoom = 16)
+```
+
+-   This dataset https://data.linz.govt.nz/layer/102477-manawatu-whanganui-lidar-1m-index-tiles-2015-2016/ helps me identify the tiles I want, which are:
+
+```{r}
+tiles <- c('BN33_1000_1935', 'BN33_1000_1936',
+           'BN33_1000_2035', 'BN33_1000_2036')
+```
+
+-   The data itself is downloadable from https://data.linz.govt.nz/layer/102475-manawatu-whanganui-lidar-1m-dem-2015-2016/
+-   unfortunately it only has view services (WMTS and XYZ) and a point-data query API, so the tiles have to be downloaded manually from the 'tiles table' interface:
+
+![](linz-fig-01.png)
