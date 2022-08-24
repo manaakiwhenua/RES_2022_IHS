@@ -1,0 +1,164 @@
+---
+title: "Data for testing IHS"
+format: 
+  html:
+    theme: cosmo
+    self-contained: true
+    fig-align: center
+editor: visual
+bibliography: references.bib
+knitr:
+  opts_chunk:
+    comment: "#>"
+    collapse: true
+    fig.align: 'center'
+    fig.show: 'hold'
+    results: 'hold'
+    message: false
+    warning: false
+---
+
+```{r}
+library(tidyverse)
+library(terra)
+library(sf)
+library(leaflet)
+library(whitebox)
+library(scico)
+
+```
+
+## Clean DEM
+
+The DEM has some short-range roughness that isn't helpful when working on a regional-scale soil mapping exercise - or even a farm one. Some of it is texture from e.g. the tops of grass plants, and some is very local-scale soil variation like the livestock-induced terracettes on steeper slopes. The remainder is artefact noise from the original data acquisition and processing.
+
+Much of this noise can be removed without compromising the shape of the underlying terrain using the Feature Preserving Smoothing method of @lindsay2019, available in the [WhiteBoxTools](https://www.whiteboxgeo.com/) (WBT) geospatial data analysis platform. This software can be used on the command line or accessed in programming environments using wrapper packages. One such package exists for R - `whitebox`. This package operates only on on-disk files and is a little picky about its inputs, so first lets create a vanilla GeoTiff for it to play with:
+
+```{r}
+source(file.path('helpers', 'gdal_env.R')) # environment variables
+
+elev_dir <- file.path('data_spatial', 'elevation')
+
+system2('gdal_translate',
+        args = 
+          c('-of', 'GTiff', 
+            '-co', 'COMPRESS=LZW',
+            file.path(elev_dir, 'Lidar_1m.vrt'),
+            file.path(elev_dir, 'Lidar_1m.tif'))
+        )
+
+```
+
+The default settings for the Feature Preserving Smoothing tool have been shown to be effective in a broad range of situations, so let\'s apply them here:
+
+```{r}
+wbt_feature_preserving_smoothing(
+  dem       = file.path(elev_dir, 'Lidar_1m.tif'),
+  output    = file.path(elev_dir, 'Lidar_FPS_1m.tif'),
+  filter    = 11,
+  norm_diff = 15,
+  num_iter  = 3,
+  max_diff  = 0.5,
+  wd        = getwd(),
+  compress_rasters = TRUE
+)
+```
+
+Its easiest to see the results by comparing a new hillshade with the original.
+
+```{r}
+system2('gdaldem',
+        args =
+          c('hillshade', '-multidirectional', 
+            file.path(elev_dir, 'Lidar_FPS_1m.tif'), 
+            file.path(getwd(), elev_dir, 'hillshade_FPS_1m.tif'))
+        )
+
+hs <- rast(file.path(getwd(), elev_dir, 'hillshade_1m.tif'))
+hs_fps <- rast(file.path(getwd(), elev_dir, 'hillshade_FPS_1m.tif'))
+```
+
+Use the layer controls to switch between hillshades and zoom in for more detail:
+
+```{r}
+#| column: screen
+#| echo: false
+leaflet() %>%
+  addTiles(urlTemplate = "https://basemaps.linz.govt.nz/v1/tiles/aerial/WebMercatorQuad/{z}/{x}/{y}.webp?api=c01gasx5z7qptvpjrc85ysfjzbj",
+           attribution = "© 2021 Land Information New Zealand",
+           group = 'Base Image') %>% 
+  addRasterImage(x = hs, 
+                 opacity = 1, 
+                 colors = grey(0:255/256),
+                 group = 'Hillshade - original') %>% 
+  addRasterImage(x = hs_fps, 
+                 opacity = 1, 
+                 colors = grey(0:255/256),
+                 group = 'Hillshade - cleaned') %>% 
+  addLayersControl(baseGroups = 'Base Image',
+                   overlayGroups = c('Hillshade - original',
+                                     'Hillshade - cleaned')) 
+  
+```
+
+Another way to verify the effect is to look at binned slope data:
+
+```{r}
+dem <- rast(file.path(elev_dir, 'Lidar_1m.tif'))
+dem_fps <- rast(file.path(elev_dir, 'Lidar_fps_1m.tif'))
+
+slope <- terrain(dem)
+slope_fps <- terrain(dem_fps)
+
+slope_rcl <-
+  matrix(c(-Inf,   3, 1L,
+              3,   7, 2L,
+              7,  11, 3L, 
+             11,  15, 4L,
+             15,  25, 5L,
+             25,  35, 6L,
+             35,  42, 7L,
+             42,  60, 8L,
+             60, Inf, 9L), ncol = 3, byrow = TRUE)
+
+slope_cl <- classify(slope, slope_rcl)
+slope_fps_cl <- classify(slope_fps, slope_rcl)
+
+class_labels <- tribble(~ID, ~slope_class,
+                         1L,       'A',
+                         2L,       'B',
+                         3L,      'C-',
+                         4L,      'C+',
+                         5L,       'D',
+                         6L,       'E',
+                         7L,       'F',
+                         8L,       'G',
+                         9L,       'H')
+levels(slope_cl) <- levels(slope_fps_cl) <- as.data.frame(class_labels)
+
+```
+
+```{r}
+#| column: screen
+#| echo: false
+
+pal <- scico(9, palette = 'batlow')
+
+leaflet() %>%
+  addTiles(urlTemplate = "https://basemaps.linz.govt.nz/v1/tiles/aerial/WebMercatorQuad/{z}/{x}/{y}.webp?api=c01gasx5z7qptvpjrc85ysfjzbj",
+           attribution = "© 2021 Land Information New Zealand",
+           group = 'Base Image') %>% 
+  addRasterImage(x = slope_cl, 
+                 opacity = 1, 
+                 colors = pal,
+                 group = 'Slope class - original') %>% 
+  addRasterImage(x = slope_fps_cl, 
+                 opacity = 1, 
+                 colors = pal,
+                 group = 'Slope class - cleaned') %>% 
+  addLayersControl(baseGroups = 'Base Image',
+                   overlayGroups = c('Slope class - original',
+                                     'Slope class - cleaned')) 
+```
+
+Post-processing, slope category patches have smoother edges and a more coherent structure, with less speckling.

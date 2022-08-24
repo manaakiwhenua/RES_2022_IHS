@@ -99,8 +99,6 @@ dem
 A hillshade would also come in handy,
 
 ```{r}
-#| message: true
-
 system2('gdaldem',
         args =
           c('hillshade', '-multidirectional', 
@@ -131,7 +129,6 @@ leaflet() %>%
                  group = 'Elevation') %>% 
   addLayersControl(baseGroups = 'Base Image',
                    overlayGroups = c('Hillshade', 'Elevation'))
-  
 ```
 
 ------------------------------------------------------------------------
