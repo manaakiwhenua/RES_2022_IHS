@@ -1,0 +1,137 @@
+---
+title: "Data for testing IHS"
+format: 
+  html:
+    theme: cosmo
+    self-contained: true
+    fig-align: center
+editor: visual
+knitr:
+  opts_chunk:
+    comment: "#>"
+    collapse: true
+    fig.align: 'center'
+    fig.show: 'hold'
+    results: 'hold'
+    message: false
+    warning: false
+---
+
+```{r}
+library(tidyverse)
+library(terra)
+library(sf)
+library(leaflet)
+
+```
+
+## Obtain DEM
+
+Pulling out a patch of publicly available LiDAR near Levin, Manawatū-Whanganui, on New Zealand's North Island, from the [LINZ data portal](https://data.linz.govt.nz).
+
+[This dataset](https://data.linz.govt.nz/layer/102477-manawatu-whanganui-lidar-1m-index-tiles-2015-2016/) can help me identify the tiles I want. This has been downloaded as a geopackage and unzipped to `data_spatial/aoi`.
+
+```{r}
+tiles <- 
+  read_sf(file.path('data_spatial', 'aoi',
+                    'manawatu-whanganui-lidar-1m-index-tiles-2015-2016.gpkg'))
+
+# had a gander in QGIS, decided I want this bit:
+wishlist <- tiles %>% 
+  dplyr::filter(TileName %in% 
+                  c('BN33_1000_1444', 'BN33_1000_1445',
+                    'BN33_1000_1544', 'BN33_1000_1545'))
+
+aoi <- st_as_sf(st_union(wishlist))
+```
+
+```{r}
+#| column: screen
+#| echo: false
+
+leaflet(st_transform(aoi, 4326)) %>%
+  addTiles(urlTemplate = "https://basemaps.linz.govt.nz/v1/tiles/aerial/WebMercatorQuad/{z}/{x}/{y}.webp?api=c01gasx5z7qptvpjrc85ysfjzbj",
+           attribution = "© 2021 Land Information New Zealand") %>% 
+  addPolygons()
+```
+
+The data itself is downloadable in GeoTiff format from [this dataset](https://data.linz.govt.nz/layer/102475-manawatu-whanganui-lidar-1m-dem-2015-2016/).
+
+Unfortunately the dataset only has view services (WMTS and XYZ) and a point-data query API, so the tiles have to be downloaded manually from the 'tiles table' interface, e.g.:
+
+![](figures/linz-fig-01.png){fig-alt="screen capture showing how to download data tiles from LINZ" fig-align="center"}
+
+This has been done and the four tiles unzipped and placed in `data_spatial\elevation`
+
+```{r}
+elev_dir <- file.path('data_spatial', 'elevation')
+list.files(elev_dir, pattern = 'DEM.*\\.tif$')
+```
+
+The easiest way to start working with the tiles is to create a [VRT](https://gdal.org/drivers/raster/vrt.html) over them using GDAL. Below, my OSGeo4W GDAL installation is accessed to do this.
+
+```{r}
+if(!file.exists(file.path('helpers', 'tile_files.txt'))) {
+  tile_files <- 
+    list.files(elev_dir, pattern = 'DEM.*\\.tif$', full.names = TRUE) 
+  txt_con <- file(file.path('helpers', 'tile_files.txt'))
+  writeLines(tile_files, txt_con)
+  close(txt_con)
+}
+
+source(file.path('helpers', 'gdal_env.R')) # environment variables
+
+system2('gdalbuildvrt',
+        args =
+          c('-input_file_list', file.path('helpers', 'tile_files.txt'),
+            file.path(getwd(), elev_dir, 'lidar_1m.vrt')))
+
+```
+
+This can now be opened in R just like any other raster data source:
+
+```{r}
+dem_file <- file.path(getwd(), elev_dir, 'lidar_1m.vrt')
+dem <- terra::rast(dem_file)
+dem
+```
+
+A hillshade would also come in handy,
+
+```{r}
+#| message: true
+
+system2('gdaldem',
+        args =
+          c('hillshade', '-multidirectional', 
+            dem_file, 
+            file.path(getwd(), elev_dir, 'hillshade_1m.tif'))
+        )
+
+hs <- rast(file.path(getwd(), elev_dir, 'hillshade_1m.tif'))
+```
+
+```{r}
+#| column: screen
+#| echo: false
+
+dem_col <- scico::scico(50, palette = 'batlow')
+
+leaflet() %>%
+  addTiles(urlTemplate = "https://basemaps.linz.govt.nz/v1/tiles/aerial/WebMercatorQuad/{z}/{x}/{y}.webp?api=c01gasx5z7qptvpjrc85ysfjzbj",
+           attribution = "© 2021 Land Information New Zealand",
+           group = 'Base Image') %>% 
+  addRasterImage(x = hs, 
+                 opacity = 0.8, 
+                 colors = grey(0:255/256),
+                 group = 'Hillshade') %>% 
+  addRasterImage(x = dem, 
+                 opacity = 0.5, 
+                 colors = dem_col,
+                 group = 'Elevation') %>% 
+  addLayersControl(baseGroups = 'Base Image',
+                   overlayGroups = c('Hillshade', 'Elevation'))
+  
+```
+
+------------------------------------------------------------------------
