@@ -4,5 +4,6 @@
 .Ruserdata
 data_spatial/
 settings.json
+*.rds
 
 /.quarto/

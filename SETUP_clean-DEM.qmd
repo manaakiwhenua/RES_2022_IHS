@@ -49,7 +49,7 @@ system2('gdal_translate',
 
 ```
 
-The default settings for the Feature Preserving Smoothing tool have been shown to be effective in a broad range of situations, so let\'s apply them here:
+The default settings for the Feature Preserving Smoothing tool have been shown to be effective in a broad range of situations, so let's apply them here:
 
 ```{r}
 wbt_feature_preserving_smoothing(
