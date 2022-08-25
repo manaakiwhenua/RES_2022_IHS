@@ -173,12 +173,29 @@ ggplot(cov_gg) +
   
 ```
 
+Write the processed input rasters to disk for future use and so they can be tested in the SOLIM software.
+
+```{r}
+if(!dir.exists(file.path('data_spatial', 'processed_covariates'))) {
+  dir.create(file.path('data_spatial', 'processed_covariates'))
+}
+out_dir <- file.path('data_spatial', 'processed_covariates')
+
+writeRaster(x = covs, 
+            filename  = file.path(out_dir, paste0(names(covs), '.tif')),
+            overwrite = TRUE,
+            datatype  = 'FLT4S',
+            gdal      = "COMPRESS=LZW",
+            names     = names(covs))
+
+```
+
 ## Cluster the data
 
 Time to check how clusterable this dataset is, and what range *c* should take
 
 ```{r}
-cont_vars_df <- as.data.frame(covs, xy = TRUE) %>% 
+cont_vars_df <- as.data.frame(covs) %>%
   tibble::rownames_to_column('cellno') %>% 
   dplyr::mutate(cellno = as.integer(cellno)) %>% 
   dplyr::filter(complete.cases(.)) %>% 
@@ -226,8 +243,8 @@ invisible(purrr::map2(list(cm_03, cm_04, cm_05, cm_06, cm_07, cm_08, cm_09,
                  cm_10, cm_11, cm_12, cm_13, cm_14, cm_15),
             seq(3,15,1),
             function(obj, i) {
-              saveRDS(obj, file.path('models',
-                                     paste0('cmeans_', i, '.rds')))
+              out_name <- paste0('cmeans_', sprintf('%02d', i), '.rds')
+              saveRDS(obj, file.path('models', out_name))
               }
             ))
 ```
@@ -271,6 +288,4 @@ ggplot(pivot_longer(fh_stats, -c(fh_ratio, N))) +
   theme_minimal()
 ```
 
-Suggests minimal gains after n = 6 in this case, although S is still low at higher numbers, and it suggests that n = 3 and n = 4 aren't separating the dataset optimally. Plotting out the clusters spatially should be revealing. 
-
-Note that *fuzzy c-means* isn't an explicitly spatially aware clustering algorithm, and can't simply be made so by e.g. adding cell center coordinates as clustering parameters. Other R packages like `geocmeans` may do a much better job with spatial datasets.
+These statistics are not promising, with F and H crossing early and S increasing steadily. This is potentially a result of the validity statistics (and the algorithm itself) being blind to spatial context. FCM can't simply be made spatially aware by e.g. adding cell center coordinates as clustering parameters; in fact, this generally makes things worse. Other R packages like `geocmeans` may do a much better job with spatial datasets.
