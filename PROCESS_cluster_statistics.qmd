@@ -122,7 +122,7 @@ twind_10m <- terra::aggregate(twind_med10, fact = 10, cores = 3)
 
 ### Rescale
 
-Note: Experimented unsuccessfully with z-score normalisation. Adding scaled x and y coordinates from cell centers also didn't improve the clustering stats
+Note: Experimented unsuccessfully with z-score normalisation. Adding scaled x and y coordinates from cell centers also didn't improve the clustering stats. Changing the plan and profile curvature scaling from -50-50 to 0-100 makes no difference to the outcomes.
 
 ```{r}
 slope_sc <- slope_10m

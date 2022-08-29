@@ -97,7 +97,8 @@ leaflet() %>%
                  group = 'Hillshade - cleaned') %>% 
   addLayersControl(baseGroups = 'Base Image',
                    overlayGroups = c('Hillshade - original',
-                                     'Hillshade - cleaned')) 
+                                     'Hillshade - cleaned'))  %>% 
+  hideGroup(c('Hillshade - cleaned'))
   
 ```
 
@@ -158,7 +159,8 @@ leaflet() %>%
                  group = 'Slope class - cleaned') %>% 
   addLayersControl(baseGroups = 'Base Image',
                    overlayGroups = c('Slope class - original',
-                                     'Slope class - cleaned')) 
+                                     'Slope class - cleaned')) %>% 
+  hideGroup(c('Slope class - cleaned'))
 ```
 
 Post-processing, slope category patches have smoother edges and a more coherent structure, with less speckling.

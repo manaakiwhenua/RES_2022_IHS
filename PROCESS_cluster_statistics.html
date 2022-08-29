@@ -2609,7 +2609,7 @@ vertical-align: -.125em;
 </section>
 <section id="rescale" class="level3">
 <h3 class="anchored" data-anchor-id="rescale">Rescale</h3>
-<p>Note: Experimented unsuccessfully with z-score normalisation. Adding scaled x and y coordinates from cell centers also didn’t improve the clustering stats</p>
+<p>Note: Experimented unsuccessfully with z-score normalisation. Adding scaled x and y coordinates from cell centers also didn’t improve the clustering stats. Changing the plan and profile curvature scaling from -50-50 to 0-100 makes no difference to the outcomes.</p>
 <div class="cell" data-layout-align="center">
 <div class="sourceCode cell-code" id="cb8"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>slope_sc <span class="ot">&lt;-</span> slope_10m</span>
 <span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>planc_sc <span class="ot">&lt;-</span> planc_10m</span>
@@ -2747,7 +2747,7 @@ vertical-align: -.125em;
 </div>
 </div>
 </div>
-<p>These statistics are not promising, with F and H crossing early and S increasing steadily. This is potentially a result of the validity statistics (and the algorithm itself) being blind to spatial context. FCM can’t simply be made spatially aware by e.g. adding cell center coordinates as clustering parameters. Other R packages like <code>geocmeans</code> may do a much better job with spatial datasets.</p>
+<p>These statistics are not promising, with F and H crossing early and S increasing steadily. This is potentially a result of the validity statistics (and the algorithm itself) being blind to spatial context. FCM can’t simply be made spatially aware by e.g. adding cell center coordinates as clustering parameters; in fact, this generally makes things worse. Other R packages like <code>geocmeans</code> may do a much better job with spatial datasets.</p>
 </section>
 
 </main>
