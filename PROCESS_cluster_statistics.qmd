@@ -185,6 +185,7 @@ writeRaster(x = covs,
             filename  = file.path(out_dir, paste0(names(covs), '.tif')),
             overwrite = TRUE,
             datatype  = 'FLT4S',
+            NAflag    = -9999, 
             gdal      = "COMPRESS=LZW",
             names     = names(covs))
 

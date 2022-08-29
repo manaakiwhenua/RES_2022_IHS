@@ -77,6 +77,38 @@ ecc_01 <- mean_mem_01 + mask_mem_01
 
 ```{r}
 #| echo: false
+#| column: screen
+
+hs_fps <- 
+  rast(file.path('data_spatial', 'elevation', 'hillshade_FPS_1m.tif'))
+pal <- colorNumeric(palette = scico(20, palette = 'batlow', begin = 0.3, end = 0.6,),
+                    domain = c(0,1),
+                    na.color = NA)
+
+leaflet() %>%
+  addTiles(urlTemplate = "https://basemaps.linz.govt.nz/v1/tiles/aerial/WebMercatorQuad/{z}/{x}/{y}.webp?api=c01gasx5z7qptvpjrc85ysfjzbj",
+           attribution = "© 2021 Land Information New Zealand",
+           group = 'Base Image') %>% 
+  addRasterImage(x = hs_fps, 
+                 opacity = 1, 
+                 colors = grey(0:255/256),
+                 group = 'Hillshade') %>% 
+  addRasterImage(x = ecc_01, 
+                 opacity = 0.5, 
+                 colors = pal,
+                 group = 'ECC 1') %>% 
+  addLayersControl(baseGroups = c('Base Image'),
+                   overlayGroups = c('Hillshade',
+                                     'ECC 1'),
+                   options = layersControlOptions(collapsed = FALSE)) %>% 
+  addLegend(position = 'bottomright',
+            pal = pal, 
+            values = values(ecc_01),
+            title = 'Membership',
+            opacity = 0.8,
+            group = 'ECC 1')
+
+
 eccdf_01 <- as.data.frame(ecc_01, xy = TRUE) %>% 
   dplyr::filter(complete.cases(.))
 
@@ -123,7 +155,7 @@ ggplot(eccdf_01) +
   coord_sf(datum = 2193)
 ```
 
-Some of these points are on isolated pixels. Depending on the inputs being clustered and what the clusters are expected to represent spatially, it may be prudent to first de-speckle the ECC map and target the highest membership value within a large, contiguous patch. However, a spatially aware clustering method should probably be used before attempting this. 
+Some of these points are on isolated pixels. Depending on the inputs being clustered and what the clusters are expected to represent spatially, it may be prudent to first de-speckle the ECC map and target the highest membership value within a large, contiguous patch. However, a spatially aware clustering method should probably be used before attempting this.
 
 Still, here's how to de-speckle the ECC surface:
 
@@ -516,6 +548,4 @@ ggplot(eccdf_09) +
   theme(axis.text = element_blank()) +
   coord_sf(datum = 2193)
 ```
-
 :::
-

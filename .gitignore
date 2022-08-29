@@ -5,5 +5,7 @@
 data_spatial/
 settings.json
 *.rds
+junk.R
+*.png
 
 /.quarto/
