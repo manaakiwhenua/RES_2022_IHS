@@ -1,0 +1,477 @@
+---
+title: "Testing IHS"
+format: 
+  html:
+    theme: cosmo
+    self-contained: true
+    fig-align: center
+    css: styles.css
+editor: visual
+bibliography: references.bib
+knitr:
+  opts_chunk:
+    comment: "#>"
+    collapse: true
+    fig.align: 'center'
+    fig.show: 'hold'
+    results: 'hold'
+    message: false
+    warning: false
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r}
+library(tidyverse)
+library(terra)
+library(sf)
+library(leaflet)
+library(scico)
+library(flextable)
+```
+
+## Map clustered data
+
+To make fuzzy maps of each set of clusters, first import the FCM models generated in the previous step. Also load one of the input rasters, which can be used as a framework to re-spatialise the data. Doesn't matter which.
+
+```{r}
+model_files <- 
+  list.files(file.path('models'), pattern = '\\.rds', full.names = TRUE)
+
+models <- lapply(model_files, readRDS)
+names(models) <- 
+  paste0('fcm_', sprintf('%02d', 
+                         sapply(models, function(i) nrow(i[['centers']]))))
+
+grid <- rast(file.path('data_spatial', 'processed_covariates', 'slope.tif'))
+```
+
+The following function takes the outputs of a model and maps each set of cluster values onto a grid that matches the input covariates. Since the cases are arranged in cell order throughout the analysis, the spatial arrangement of the clusters can be reconstituted.
+
+```{r}
+fuzzy_maps <- function(model = NULL, grid = NULL) {
+  # get indexes of cells that contain data
+  valcells <- which(!is.na(terra::values(grid)))
+  # get number of clusters - 1 cluster, 1 map
+  cen <- length(model$size)
+  # check that cases == cells or the output maps will be scrambled
+  cases  <- nrow(model$membership)
+  
+  if(length(valcells) != cases) {
+    stop("cluster cases doesn't match number of non-NA grid cells - check inputs")
+  }
+  
+  out <- lapply(seq(cen), function(m) {
+    grid[valcells] <- model$membership[, m]
+    grid
+  })
+  
+  names(out) <- paste0('Cluster_', sprintf('%02d', seq(cen)))
+  terra::rast(out)
+}
+
+# for example,
+clmaps_04 <- fuzzy_maps(models[['fcm_04']], grid)
+
+```
+
+```{r}
+#| column: screen-inset
+#| echo: false
+
+hs_fps <- 
+  rast(file.path('data_spatial', 'elevation', 'hillshade_FPS_1m.tif'))
+pal <- scico(20, palette = 'batlow')
+
+leaflet() %>%
+  addTiles(urlTemplate = "https://basemaps.linz.govt.nz/v1/tiles/aerial/WebMercatorQuad/{z}/{x}/{y}.webp?api=c01gasx5z7qptvpjrc85ysfjzbj",
+           attribution = "© 2021 Land Information New Zealand",
+           group = 'Base Image') %>% 
+  addRasterImage(x = hs_fps, 
+                 opacity = 1, 
+                 colors = grey(0:255/256),
+                 group = 'Hillshade') %>% 
+  addRasterImage(x = clmaps_04[[1]], 
+                 opacity = 0.5, 
+                 colors = pal,
+                 group = 'Cluster 1 of 4') %>% 
+  addRasterImage(x = clmaps_04[[2]], 
+                 opacity = 0.5, 
+                 colors = pal,
+                 group = 'Cluster 2 of 4') %>% 
+  addRasterImage(x = clmaps_04[[3]], 
+                 opacity = 0.5, 
+                 colors = pal,
+                 group = 'Cluster 3 of 4') %>% 
+  addRasterImage(x = clmaps_04[[4]], 
+                 opacity = 0.5, 
+                 colors = pal,
+                 group = 'Cluster 4 of 4') %>% 
+  addLayersControl(baseGroups = c('Base Image'),
+                   overlayGroups = c('Hillshade',
+                                     'Cluster 1 of 4',
+                                     'Cluster 2 of 4',
+                                     'Cluster 3 of 4',
+                                     'Cluster 4 of 4'),
+                   options = layersControlOptions(collapsed = FALSE)) %>% 
+  hideGroup(c('Cluster 2 of 4', 'Cluster 3 of 4', 'Cluster 4 of 4'))
+```
+
+So despite the poor validity statistics, we see some patterns that are recognisable, e.g. the steep areas appear to be highlighted in Cluster 3.
+
+## Harden maps
+
+These maps can be hardened into binary surfaces at a set membership cut-off. A value of 0.6 is used below per the results of the sensitivity testing in [-@yang2013, section 3.4]:
+
+```{r}
+binary_maps <- function(model = NULL, grid = NULL, threshold = 0.6) {
+  # reclassify the membership matrix to 0/1 by threshold
+  mem_bin <- apply(model$membership, MARGIN = c(1,2), function(i) {
+    # don't use NA here, makes rep grade calc harder later
+    if(i < threshold) { 0 } else { 1 }
+  })
+  
+  valcells <- which(!is.na(terra::values(grid)))
+  cen <- length(model$size)
+  cases  <- nrow(mem_bin)
+  
+  if(length(valcells) != cases) {
+    stop("cluster cases doesn't match number of non-NA grid cells - check inputs")
+  }
+  
+  out <- lapply(seq(cen), function(m) {
+    grid[valcells] <- mem_bin[, m]
+    grid
+  })
+  
+  names(out) <- paste0('Cluster_', sprintf('%02d', seq(cen)))
+  terra::rast(out)
+}
+
+binmaps_04 <- binary_maps(models[['fcm_04']], grid, 0.6)
+
+```
+
+```{r}
+#| column: screen-inset
+#| echo: false
+
+leaflet() %>%
+  addTiles(urlTemplate = "https://basemaps.linz.govt.nz/v1/tiles/aerial/WebMercatorQuad/{z}/{x}/{y}.webp?api=c01gasx5z7qptvpjrc85ysfjzbj",
+           attribution = "© 2021 Land Information New Zealand",
+           group = 'Base Image') %>% 
+  addRasterImage(x = hs_fps, 
+                 opacity = 1, 
+                 colors = grey(0:255/256),
+                 group = 'Hillshade') %>% 
+  addRasterImage(x = binmaps_04[[1]], 
+                 opacity = 0.5, 
+                 method = 'ngb',
+                 colors = c(NA, 'darkblue'),
+                 group = 'Cluster 1 of 4') %>% 
+  addRasterImage(x = binmaps_04[[2]], 
+                 opacity = 0.5, 
+                 method = 'ngb',
+                 colors = c(NA, 'darkblue'),
+                 group = 'Cluster 2 of 4') %>% 
+  addRasterImage(x = binmaps_04[[3]], 
+                 opacity = 0.5, 
+                 method = 'ngb',
+                 colors = c(NA, 'darkblue'),
+                 group = 'Cluster 3 of 4') %>% 
+  addRasterImage(x = binmaps_04[[4]], 
+                 opacity = 0.5, 
+                 method = 'ngb',
+                 colors = c(NA, 'darkblue'),
+                 group = 'Cluster 4 of 4') %>% 
+  addLayersControl(baseGroups = c('Base Image'),
+                   overlayGroups = c('Hillshade',
+                                     'Cluster 1 of 4',
+                                     'Cluster 2 of 4',
+                                     'Cluster 3 of 4',
+                                     'Cluster 4 of 4'),
+                   options = layersControlOptions(collapsed = FALSE)) %>% 
+  hideGroup(c('Cluster 2 of 4', 'Cluster 3 of 4', 'Cluster 4 of 4'))
+
+```
+
+## Map representative grade
+
+The 'representative grade' can now be calculated - the number of times each pixel appears in a cluster (with a sufficiently high membership each time) across multiple *c*.
+
+using *c* = 4,5,6,7,8 for now
+
+```{r}
+# already did c = 4, so
+clmaps_05 <- fuzzy_maps(models[['fcm_05']], grid)
+clmaps_06 <- fuzzy_maps(models[['fcm_06']], grid)
+clmaps_07 <- fuzzy_maps(models[['fcm_07']], grid)
+clmaps_08 <- fuzzy_maps(models[['fcm_08']], grid)
+binmaps_05 <- binary_maps(models[['fcm_05']], grid, 0.6)
+binmaps_06 <- binary_maps(models[['fcm_06']], grid, 0.6)
+binmaps_07 <- binary_maps(models[['fcm_07']], grid, 0.6)
+binmaps_08 <- binary_maps(models[['fcm_08']], grid, 0.6)
+```
+
+Representative grade is a simple overlay-and-sum operation using the hardened cluster maps.
+
+```{r}
+rep_04 <- sum(binmaps_04) # maps whether cells were in any cluster
+rep_05 <- sum(binmaps_05)
+rep_06 <- sum(binmaps_06)
+rep_07 <- sum(binmaps_07)
+rep_08 <- sum(binmaps_08)
+
+representative_grade <- sum(c(rep_05, rep_05, rep_06, rep_07, rep_08))
+
+```
+
+```{r}
+#| column: screen-inset
+#| echo: false
+
+pal_c <- scico(5, palette = 'batlow', end = 0.8)
+
+leaflet() %>%
+  addTiles(urlTemplate = "https://basemaps.linz.govt.nz/v1/tiles/aerial/WebMercatorQuad/{z}/{x}/{y}.webp?api=c01gasx5z7qptvpjrc85ysfjzbj",
+           attribution = "© 2021 Land Information New Zealand",
+           group = 'Base Image') %>% 
+  addRasterImage(x = hs_fps, 
+                 opacity = 1, 
+                 colors = grey(0:255/256),
+                 group = 'Hillshade') %>% 
+  addRasterImage(x = representative_grade, 
+                 opacity = 0.5, 
+                 colors = pal_c,
+                 method = 'ngb',
+                 group = 'Representative Grade') %>% 
+  addLayersControl(baseGroups = c('Base Image'),
+                   overlayGroups = c('Hillshade',
+                                     'Representative Grade'),
+                   options = layersControlOptions(collapsed = FALSE)) %>% 
+  addLegend(position = 'bottomright',
+            colors = pal_c,
+            labFormat = 'factor',
+            labels = seq(5),
+            title = 'Rep Grade',
+            opacity = 0.8,
+            group = 'Representative Grade')
+```
+
+## Determine environmental cluster chains
+
+The 'environmental cluster chains' for each pixel now need to be determined. This effectively assigns a cluster/iteration signature, e.g. a pixel representative of class 1 in the 3-cluster surface and class 3 in the 5-cluster surface would have a label like '1-0-3-0-0'.
+
+Each of these cluster chains will occupy a set number of pixels. @yang2013 propose that the chains that have both a high representative grade and a large area should be targeted first for sampling, and that pixels with a high average membership within those areas are the best places to go.
+
+Firstly, the binary maps need to be recoded so that they have a cluster number - so e.g. the map for cluster 3 in the *c* = 4 solution takes values of 3/0 instead of 1/0
+
+```{r}
+renumber_binmaps <- function(binmaps = NULL) {
+  nl <- terra::nlyr(binmaps)
+  for(i in seq(nl)) { binmaps[[i]][binmaps[[i]] == 1] <- i }
+  binmaps
+}
+
+binmaps_04_rn <- renumber_binmaps(binmaps_04) 
+binmaps_05_rn <- renumber_binmaps(binmaps_05)
+binmaps_06_rn <- renumber_binmaps(binmaps_06)
+binmaps_07_rn <- renumber_binmaps(binmaps_07)
+binmaps_08_rn <- renumber_binmaps(binmaps_08)
+```
+
+```{r}
+#| echo: false
+#| column: screen-inset
+
+pal_c2 <- scico(4, palette = 'batlow', end = 0.8)
+sbn <- sum(binmaps_04_rn)
+
+leaflet() %>%
+  addTiles(urlTemplate = "https://basemaps.linz.govt.nz/v1/tiles/aerial/WebMercatorQuad/{z}/{x}/{y}.webp?api=c01gasx5z7qptvpjrc85ysfjzbj",
+           attribution = "© 2021 Land Information New Zealand",
+           group = 'Base Image') %>% 
+  addRasterImage(x = hs_fps, 
+                 opacity = 1, 
+                 colors = grey(0:255/256),
+                 group = 'Hillshade') %>% 
+  addRasterImage(x = sbn, 
+                 opacity = 0.5, 
+                 method = 'ngb',
+                 colors = pal_c2,
+                 group = 'All clusters') %>% 
+  addRasterImage(x = binmaps_04_rn[[1]], 
+                 opacity = 0.5, 
+                 method = 'ngb',
+                 colors = c(NA, pal_c2[1]),
+                 group = 'Cluster 1 of 4') %>% 
+  addRasterImage(x = binmaps_04_rn[[2]], 
+                 opacity = 0.5, 
+                 method = 'ngb',
+                 colors = c(NA, pal_c2[2]),
+                 group = 'Cluster 2 of 4') %>% 
+  addRasterImage(x = binmaps_04_rn[[3]], 
+                 opacity = 0.5, 
+                 method = 'ngb',
+                 colors = c(NA, pal_c2[3]),
+                 group = 'Cluster 3 of 4') %>% 
+  addRasterImage(x = binmaps_04_rn[[4]], 
+                 opacity = 0.5, 
+                 method = 'ngb',
+                 colors = c(NA, pal_c2[4]),
+                 group = 'Cluster 4 of 4') %>% 
+  addLayersControl(baseGroups = c('Base Image'),
+                   overlayGroups = c('Hillshade',
+                                     'All clusters',
+                                     'Cluster 1 of 4',
+                                     'Cluster 2 of 4',
+                                     'Cluster 3 of 4',
+                                     'Cluster 4 of 4'),
+                   options = layersControlOptions(collapsed = FALSE)) %>% 
+  hideGroup(c('Cluster 1 of 4', 'Cluster 2 of 4', 
+              'Cluster 3 of 4', 'Cluster 4 of 4')) %>% 
+  addLegend(position = 'bottomright',
+            colors = pal_c2,
+            labFormat = 'factor',
+            labels = seq(4),
+            title = 'Cluster #',
+            opacity = 0.8,
+            group = 'All clusters')
+```
+
+Next, stack all of the input clustering layers together, grouped by *c* using `sum()`.
+
+```{r}
+
+all_clusters <- rast(list(sum(binmaps_04_rn),
+                          sum(binmaps_05_rn),
+                          sum(binmaps_06_rn),
+                          sum(binmaps_07_rn),
+                          sum(binmaps_08_rn)))
+names(all_clusters) <- paste0('fcm_', sprintf('%02d', 4:8))
+
+```
+
+This allows us to extract all of the ECC chain data to a table with
+
+```{r}
+
+get_clusterchains <- function(clmap = NULL) {
+  as.data.frame(clmap)  %>% 
+    # create ecc name and calc rep grade and a UID
+    mutate(ecc_name = apply(., MARGIN = 1, function(i) {
+    if(all(is.na(i))) { return(NA_character_) }
+    paste0(i, collapse = '-') 
+    }),
+    rep_grade = rowSums(. != 0)) %>% 
+    # calc rep area
+    group_by(across(everything())) %>%
+    summarise(rep_area = n()) %>% 
+    ungroup() %>% 
+    mutate(across(-ecc_name, na_if, 0)) %>% 
+    filter(rep_grade > 0) %>% 
+    arrange(desc(rep_grade), desc(rep_area)) %>% 
+    # will need later...
+    mutate(uid = row_number()) 
+}
+
+all_eccs <- get_clusterchains(all_clusters)
+
+```
+
+And map out the location of each chain.
+
+```{r}
+# this needs some work
+map_clusterchains <- function(clmap = NULL, eccs = NULL, 
+                              id_field = NULL, grid = NULL) {
+  dat <- as.data.frame(clmap) %>% 
+    mutate(ecc_name = apply(., MARGIN = 1, function(i) {
+    if(all(is.na(i))) { return(NA_character_) }
+    paste0(i, collapse = '-') 
+    })) %>% 
+    left_join(., eccs[, c('ecc_name', id_field)], by = 'ecc_name')
+  
+  grid[which(!is.na(values(grid)))] <- dat[[id_field]]
+  grid
+}
+
+ecc_map <- map_clusterchains(all_clusters, all_eccs, 'uid', grid)
+```
+
+Next, tag the chains @yang2013 regard as redundant, in that they are 'contained' in a chain with a higher representative grade (e.g. 0-2-0-0-8 would be redundant to sample if 2-2-2-2-8 was already targeted).
+
+```{r}
+# https://stackoverflow.com/questions/63806865/flagging-redundant-rows-with-na/
+# if its stupid and it works, its not stupid >.>
+tag_redundant <- function(dat = NULL, n_c = NULL) {
+
+    na_count <- rowSums(is.na(dat[, 1:n_c]))
+
+    strings <- apply(dat[, 1:n_c], MARGIN = 1, function(row) {
+      row[is.na(row)] <- '.'
+      paste0(row, collapse ='')
+    })
+    
+    dat$is_unique <- 
+    sapply(seq_along(strings), function(i) {
+      if(na_count[i] == 0) { return(TRUE) } # no redundancy where rg == max rg
+      test_targets <- strings[na_count <= na_count[i]]
+      test_targets <- test_targets[!test_targets %in% strings[i]]
+      !any(grepl(strings[i], test_targets))
+    })
+
+    dat
+}
+
+all_eccs <- tag_redundant(all_eccs, 5)
+```
+
+```{r}
+#| echo: false
+#| column: screen-inset
+
+ft <- flextable(all_eccs[1:10, 6:10 ])
+ft <- autofit(ft)
+ft <- set_caption(ft, "ECC data, top ten cluster chains")
+ft
+```
+
+This signifies that `r nrow(dplyr::filter(all_eccs, is_unique == TRUE))` ECCs are unique. Of those, only `r nrow(dplyr::filter(all_eccs, rep_area > 20 & is_unique == TRUE))` have a representative area of \> 20 cells (in this case, that's 0.2 ha). These are the areas in which sample points should be chosen. This is the next step, which requires the following data.
+
+```{r}
+#| results: hide
+if(!dir.exists(file.path('sample_plan'))) {
+  dir.create(file.path('sample_plan'))
+}
+
+if(!dir.exists(file.path('data_spatial', 'model_outputs'))) {
+  dir.create(file.path('data_spatial', 'model_outputs'))
+}
+
+write_csv(all_eccs, file.path('sample_plan', 'ECC_table.csv'))
+
+writeRaster(ecc_map, 
+            file.path('data_spatial', 'model_outputs', 'ecc_map.tif'),
+            overwrite = TRUE,
+            datatype = 'FLT4S',
+            gdal = "COMPRESS=LZW")
+
+writeRaster(all_clusters,
+            file.path('data_spatial', 'model_outputs', 'all_clusters.tif'),
+            overwrite = TRUE,
+            datatype = 'FLT4S',
+            gdal = "COMPRESS=LZW")
+
+# need all the membership data for picking sites too,
+purrr::map2(
+  list(clmaps_04, clmaps_05, clmaps_06, clmaps_07, clmaps_08), 4:8, 
+  function(i, j) {
+    outnm <- paste0('cluster_', sprintf('%02d', j), '_membership.tif')
+    writeRaster(i,
+                file.path('data_spatial', 'model_outputs', outnm),
+                overwrite = TRUE,
+                datatype = 'FLT4S',
+                gdal = "COMPRESS=LZW")
+    })
+```

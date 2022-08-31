@@ -1,0 +1,177 @@
+---
+title: "Checking IHS Results"
+format: 
+  html:
+    theme: cosmo
+    self-contained: true
+    fig-align: center
+    css: styles.css
+editor: visual
+bibliography: references.bib
+knitr:
+  opts_chunk:
+    comment: "#>"
+    collapse: true
+    fig.align: 'center'
+    fig.show: 'hold'
+    results: 'hold'
+    message: false
+    warning: false
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r}
+library(tidyverse)
+library(terra)
+library(sf)
+library(leaflet)
+library(scico)
+library(flextable)
+```
+
+To test the replication, SoLIM is used with the prepared covariates as follows:
+
+1.  Obtain the software from the [SoLIM website](https://solim.geography.wisc.edu/software/index.htm) (or me)
+
+2.  Run `SoLIMSolutions.exe`
+
+![](figures/solim_000.png){fig-align="center"}
+
+1.  Use tool `‘Utilities > Data format conversion > GDAL-supported raster formats -> 3dr’` to convert the covariate TIFs exported earlier to the required '.3dr' file format.
+
+::: grid
+::: g-col-6
+![](figures/solim_001.png){fig-align="center"}
+:::
+
+::: g-col-6
+![](figures/solim_002.png){fig-align="center"}
+:::
+:::
+
+4.  Use the tool `Sample Design > Purposive Sampling (Yang etc.)` to carry out the analysis.
+
+::: grid
+::: g-col-6
+![](figures/solim_003.png){fig-align="center"}
+:::
+
+::: g-col-6
+![](figures/solim_004.png){fig-align="center"}
+:::
+:::
+
+The tool settings should be:
+
+- all 4 covariates loaded
+- tick the ‘mask’ checkbox and choose any of the covariates. set the Masking Value field to -9999 (otherwise the no-data value in each layer will be included in the cluster analysis D:)
+- leave the default settings for m, iteration number, and membership error
+- cluster min 4, max 8
+- alpha-cut threshold 0.6
+- N samples/pattern 3
+- min dist 50m
+- set output folder and nominate a file name for the 'test sites' csv
+
+Once the program is run, the outputs appear in a set of subfolders at the nominated destination. The key one is `/patterns`, which holds 3dr files that represent the equivalent of the cluster chain surfaces produced above. Only the surfaces for unique chains are output. The outputs are summarised in `/pattern_list.csv`, which looks quite similar to the table of ECC data produced in the previous documents.
+
+Below, R outputs are compared with SoLIM's.
+
+```{r}
+eccs <- read_csv(file.path('sample_plan', 'ECC_table.csv')) 
+
+solim_eccs <- 
+  read_csv(file.path('data_spatial', 'solim_out', 'pattern_list.csv'))
+
+```
+
+::: grid
+::: g-col-6
+```{r}
+#| echo: false
+ft1 <- eccs %>% 
+  dplyr::filter(rep_area > 20 & is_unique == TRUE) %>% 
+  dplyr::select(ecc_name, rep_grade, rep_area, uid) %>% 
+  flextable()
+ft1 <- autofit(ft1)
+ft1 <- set_caption(ft1, "ECC data, unique cluster chains, >20 cells")
+ft1
+
+```
+:::
+
+::: g-col-6
+```{r}
+#| echo: false
+ft2 <- solim_eccs %>%  
+  dplyr::select(Name, Stability, Area, ID) %>% 
+  dplyr::filter(Area > 20) %>% 
+  flextable()
+ft2 <- autofit(ft2)
+ft2 <- set_caption(ft2, "ECC data from SoLIM")
+ft2
+
+```
+:::
+:::
+
+Looking at both documents, the first entries don't look very similar, but plotting the maps for the first row from each shows the following:
+
+```{r}
+ecc_01 <- terra::rast(file.path('data_spatial', 'ecc_results',
+                                'ecc_01.tif'))
+
+
+solim_ecc_01 <- terra::rast(file.path('data_spatial', 'solim_out',
+                                      'patterns', 'pattern11.asc'))
+crs(solim_ecc_01) <- crs(ecc_01)
+
+ecc_diff <- solim_ecc_01 - ecc_01
+
+```
+
+```{r}
+#| echo: false
+
+pl1 <- as.data.frame(rast(list(ecc_01, 
+                               solim_ecc_01)),
+                     xy = TRUE) %>% 
+  rename(ECC_01 = mean, S_ECC_01 = pattern11) %>% 
+  pivot_longer(cols = c(ECC_01, S_ECC_01), 
+               names_to = 'layer', 
+               values_to = 'membership') %>% 
+  dplyr::filter(!is.na(membership))
+
+ggplot(pl1) +
+  geom_tile(aes(x = x, y = y, fill = membership, group = layer), 
+            alpha = 0.8) +
+  facet_wrap(.~layer, ncol = 3) +
+  scale_fill_scico(palette = 'batlow') +
+  labs(x = '', y = '', fill = 'Membership',
+       title = 'ECC 1 comparison') +
+  theme_minimal() +
+  theme(axis.text = element_blank(),
+        legend.position = 'bottom') +
+  coord_sf(datum = 2193)
+```
+
+```{r}
+#| echo: false
+pl2 <- as.data.frame(ecc_diff, xy = TRUE) %>% 
+  rename(difference = pattern11) %>% 
+  dplyr::filter(!is.na(difference))
+
+ggplot(pl2) +
+  geom_tile(aes(x = x, y = y, fill = difference), 
+            alpha = 0.6) +
+  scale_fill_scico(palette = 'grayC', 
+                   limits = c(-0.01, 0)) +
+  labs(x = '', y = '', fill = 'Difference') +
+  theme_minimal() +
+  theme(axis.text = element_blank()) +
+  coord_sf(datum = 2193)
+
+```
+
+
+There are some minor differences in membership and total pixel count, but overall we can see that the method has been replicated.

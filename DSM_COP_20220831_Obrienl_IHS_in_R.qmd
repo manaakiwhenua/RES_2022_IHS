@@ -1,0 +1,143 @@
+---
+title: "Implementing integrated hierarchical sampling in R"
+author: "Lauren O'Brien"
+date: "2022-08-31"
+institute: "Manaaki Whenua - Landcare Research"
+format: 
+  revealjs:
+    logo: figures/mw_lr_landscape_small_black.svg
+    reference-location: document
+    smaller: true
+    scrollable: true
+    self-contained: true
+editor: visual
+bibliography: references.bib
+csl: geoderma.csl
+editor_options: 
+  chunk_output_type: console
+---
+
+## Background
+
+-   Sampling for S-Map
+-   Need to locate landscape-typical sites during initial mapping phase
+
+![](figures/smap_ss.png){fig-align="center" width="500"}
+
+## Integrated Hierarchical Sampling (IHS)
+
+-   builds on 'purposive sampling'
+-   @zhuPurposiveSamplingDigital2008 - [10.1007/978-1-4020-8592-5](https://doi.org/10.1007/978-1-4020-8592-5) - cluster over covariates, sample where membership is high
+-   This time: fuzzy c-means clustering over [multiple values]{.underline} of *c*
+-   high membership across more iterations = more regionally typical
+-   high membership on larger cluster numbers only = more local/niche
+
+## Implementations - local {.smaller}
+
+-   @yang.etal-2013 - [10.1080/13658816.2012.658053](https://doi.org/10.1080/13658816.2012.658053)
+
+    -   watershed scale, loessy farmland, northern China, previously unmapped
+    -   only clustered on slope, curvatures, TWI
+    -   validated with grid + ad-hoc + one transect
+
+::: columns
+::: {.column style="width: 50%"}
+![Study area DEM](figures/heshan_DEM.png){style="fig-size: 50%" width="240"}
+:::
+
+::: {.column style="width: 50%"}
+![IHS sample points](figures/heshan_ihs_sites.png){width="240"}
+:::
+:::
+
+## Implementations - regional {.smaller}
+
+-   @yang.etal-2017 - [10.1016/S1002-0160(17)60322-9](https://doi.org/10.1016/S1002-0160(17)60322-9)
+
+    -   regional scale, multiple land uses and mixed terrain
+    -   stratified on geology map, added rainfall and temp to covariates
+    -   grid validation - middling results, but *very* low n
+
+::: columns
+::: {.column style="width: 50%"}
+![Study area](figures/anhui_001.png){width="250"}
+:::
+
+::: {.column style="width: 50%"}
+![Sampling and validation points](figures/anhui_002.png){width="250"}
+:::
+:::
+
+## Evaluations
+
+-   @yang.etal-2016 - [10.2136/sssaj2015.08.0285](https://doi.org/10.2136/sssaj2015.08.0285)
+
+    -   2 desktop exercises, IHS head to head with cLHS and SRS
+    -   appears to outperform cLHS at watershed scale (\~1:24k)
+    -   more stable across iterations, potentially lower *n* required
+
+![](figures/y2016_ihs-clhs.png){fig-align="center" width="400"}
+
+## Software
+
+::: columns
+::: {.column width="30%"}
+-   SoLIM
+-   GUI-based, closed source
+-   aged/retired
+-   ☹️
+:::
+
+::: {.column width="70%"}
+![](figures/solim_ss.png)
+:::
+:::
+
+## R version
+
+-   Quarto documents - full workflow, current R stack (sf/terra, etc)
+-   Reverse-engineered and verified against SoLIM software outputs
+
+```{r}
+#| echo: false
+cat(list.files(pattern = '\\.qmd'), sep = '\n')
+
+```
+
+```{r}
+#| echo: true
+library(tidyverse) # wranglin'
+library(terra)     # raster 
+library(sf)        # vector
+library(whitebox)  # geospatial analytics
+library(e1071)     # clustering functions
+library(fclust)    # more clustering functions
+
+library(leaflet)   # pretty web maps
+library(scico)     # pretty colours
+library(flextable) # pretty tables
+```
+
+::: aside
+NB: Use the dev version of `leaflet,` and `htmlwidgets` v 0.5.2 for now.
+:::
+
+## Local testing
+
+![](figures/naki_sml.jpg){fig-align="center"}
+
+## Where to from here?
+
+-   Assessment
+    -   clearer tests vs other methods
+    -   incorporate wider range of covariates
+    -   utility for validation stage?
+-   Refinement
+    -   `geocmeans` package - spatially aware clustering
+    -   other image segmentation methods e.g. `motif`
+-   Remix
+    -   examine legacy samples for IHS typicality
+
+    -   @zhang.etal-2022 - cluster over different covariate mixes at one optimal *c* each, then IHS - optimising for multiple soil properties
+
+## References

@@ -1,0 +1,294 @@
+---
+title: "Testing IHS"
+format: 
+  html:
+    theme: cosmo
+    self-contained: true
+    fig-align: center
+    css: styles.css
+editor: visual
+bibliography: references.bib
+knitr:
+  opts_chunk:
+    comment: "#>"
+    collapse: true
+    fig.align: 'center'
+    fig.show: 'hold'
+    results: 'hold'
+    message: false
+    warning: false
+editor_options: 
+  chunk_output_type: console
+---
+
+## Prepare covariates for clustering
+
+```{r}
+library(tidyverse)
+library(terra)
+library(sf)
+library(leaflet)
+library(scico)
+library(e1071)
+library(fclust)
+```
+
+Steps:
+
+-   squish
+-   smooth
+-   aggregate
+-   rescale
+-   stats
+
+```{r}
+terr_dir <- file.path('data_spatial', 'terrain_morphometry')
+
+slope <- rast(file.path(terr_dir, 'Slope_1m.tif'))
+planc <- rast(file.path(terr_dir, 'PlanC_1m.tif'))
+profc <- rast(file.path(terr_dir, 'ProfC_1m.tif'))
+twind <- rast(file.path(terr_dir, 'TWI_1m.tif'))
+```
+
+### Squish
+
+Outlier handling is only necessary if the kurtosis statistic indicates:
+
+```{r}
+kurt_stats <- sapply(list(slope, planc, profc, twind), 
+       function(i) { e1071::kurtosis(i[], na.rm = T) })
+names(kurt_stats) <- c('slope', 'planc', 'profc', 'twind')
+kurt_stats[kurt_stats > 1]
+```
+
+Per above, only `twind` escapes this treatment, and `planc` really needs a haircut.
+
+```{r}
+# curvatures have -inf-0-inf style parameters centered on 0 so both
+# extremes need a trim:
+planc_sq <- planc
+planc_sq[] <- 
+  scales::oob_squish(planc_sq[], 
+                     range = quantile(planc_sq[], 
+                                      c(0.001, 0.999),
+                                      na.rm = TRUE)
+                     )
+profc_sq <- profc
+profc_sq[] <- 
+  scales::oob_squish(profc_sq[], 
+             range = quantile(profc_sq[],
+                              c(0.001, 0.999), 
+                              na.rm = TRUE)
+             )
+
+# slope is a 0-inf parameter so only its top end needs a trim
+slope_sq <- slope
+slope_sq[] <- 
+  scales::oob_squish(slope_sq[], 
+                     range = quantile(slope_sq[],
+                                      c(0.000, 0.999), 
+                                      na.rm = TRUE))
+```
+
+### Smooth
+
+Working with 10 m cells for this exercise. Aggregating straight to 10m can produce strange artefacts in the outputs which correspond to a loss of local spatial autocorrelation. Some autocorrelation loss is unavoidable with aggregation, but the effect can be minimised by using a low-pass mean or median filter with roughly the same window size as the target cell size for aggregation, immediately prior to aggregating.
+
+Note that median filters are generally a lot slower! While a full raster dataset may have a skewed histogram globally, this is (usually) less of a concern over a small local window size due to good ol' autocorrelation. You can probably get away with the mean.
+
+First, generate a focal window as a weighted matrix
+
+```{r}
+ # 11 x 11 cells - must be odd
+circ10 <- focalMat(slope, 5, type = 'circle')
+```
+
+Then smooth
+
+```{r}
+slope_med10 <- focal(slope_sq, w = circ10, fun = 'mean')
+planc_med10 <- focal(planc_sq, w = circ10, fun = 'mean')
+profc_med10 <- focal(profc_sq, w = circ10, fun = 'mean')
+twind_med10 <- focal(twind, w = circ10, fun = 'mean')
+```
+
+### Aggregate
+
+```{r}
+slope_10m <- terra::aggregate(slope_med10, fact = 10, cores = 3)
+planc_10m <- terra::aggregate(planc_med10, fact = 10, cores = 3)
+profc_10m <- terra::aggregate(profc_med10, fact = 10, cores = 3)
+twind_10m <- terra::aggregate(twind_med10, fact = 10, cores = 3)
+```
+
+### Rescale
+
+Note: Experimented unsuccessfully with z-score normalisation. Adding scaled x and y coordinates from cell centers also didn't improve the clustering stats. Changing the plan and profile curvature scaling from -50-50 to 0-100 makes no difference to the outcomes.
+
+```{r}
+slope_sc <- slope_10m
+planc_sc <- planc_10m
+profc_sc <- profc_10m
+twind_sc <- twind_10m
+
+slope_sc[] <- scales::rescale(slope_sc[], to = c(0, 100))
+# note that scaling these to 0-100 doesn't have any apparent impact on the 
+# clustering stats but does make the covariate density plot look nicer
+planc_sc[] <- scales::rescale(planc_sc[], to = c(-50, 50))
+profc_sc[] <- scales::rescale(profc_sc[], to = c(-50, 50))
+twind_sc[] <- scales::rescale(twind_sc[], to = c(0, 100))
+
+covs <- rast(list('slope' = slope_sc,
+                  'planc' = planc_sc,
+                  'profc' = profc_sc,
+                  'twind' = twind_sc))
+```
+
+```{r}
+#| echo: false
+#| layout-ncol: 2
+
+cov_samp <- as.data.frame(covs) %>% 
+  filter(complete.cases(.)) %>% 
+  pivot_longer(everything()) 
+
+ggplot(cov_samp) +
+    geom_density(aes(x = value, group = name, colour = name, fill = name ), 
+                 alpha = 0.5) +
+    theme_minimal() +
+    labs(fill = 'Covariate', colour = 'Covariate',
+         title = 'Covariate density curves')
+
+cov_gg <- as.data.frame(covs, xy = TRUE) %>% 
+  pivot_longer(cols = c(slope, planc, profc, twind))
+
+ggplot(cov_gg) +
+  geom_raster(aes(x = x, y = y, fill = value, group = name),
+              alpha = 0.8) +
+  facet_wrap(facets = vars(name), nrow = 2) +
+  scale_fill_scico(palette = 'batlow') +
+  theme_minimal() +
+  theme(axis.title = element_blank(),
+        axis.text = element_blank()) +
+  coord_equal()
+  
+```
+
+Write the processed input rasters to disk for future use and so they can be tested in the SOLIM software.
+
+```{r}
+if(!dir.exists(file.path('data_spatial', 'processed_covariates'))) {
+  dir.create(file.path('data_spatial', 'processed_covariates'))
+}
+out_dir <- file.path('data_spatial', 'processed_covariates')
+
+writeRaster(x = covs, 
+            filename  = file.path(out_dir, paste0(names(covs), '.tif')),
+            overwrite = TRUE,
+            datatype  = 'FLT4S',
+            NAflag    = -9999, 
+            gdal      = "COMPRESS=LZW",
+            names     = names(covs))
+
+```
+
+## Cluster the data
+
+Time to check how clusterable this dataset is, and what range *c* should take
+
+```{r}
+cont_vars_df <- as.data.frame(covs) %>%
+  tibble::rownames_to_column('cellno') %>% 
+  dplyr::mutate(cellno = as.integer(cellno)) %>% 
+  dplyr::filter(complete.cases(.)) %>% 
+  dplyr::select(cellno, everything())
+```
+
+This gives us `r nrow(cont_vars_df)` cases to cluster.
+
+Can't check for optimal cluster number (or range of same) without doing the work first, so below model objects are computed for *c* 3 through 15
+
+```{r}
+if(!dir.exists(file.path('models'))) {
+  dir.create(file.path('models'))
+}
+
+# ~2s each
+
+set.seed(42) # do this to ensure script spits out same surfaces each time
+cm_03 <- e1071::cmeans(cont_vars_df[, -1], centers = 3)
+set.seed(42)
+cm_04 <- e1071::cmeans(cont_vars_df[, -1], centers = 4)
+set.seed(42)
+cm_05 <- e1071::cmeans(cont_vars_df[, -1], centers = 5)
+set.seed(42)
+cm_06 <- e1071::cmeans(cont_vars_df[, -1], centers = 6)
+set.seed(42)
+cm_07 <- e1071::cmeans(cont_vars_df[, -1], centers = 7)
+set.seed(42)
+cm_08 <- e1071::cmeans(cont_vars_df[, -1], centers = 8)
+set.seed(42)
+cm_09 <- e1071::cmeans(cont_vars_df[, -1], centers = 9)
+set.seed(42)
+cm_10 <- e1071::cmeans(cont_vars_df[, -1], centers = 10)
+set.seed(42)
+cm_11 <- e1071::cmeans(cont_vars_df[, -1], centers = 11)
+set.seed(42)
+cm_12 <- e1071::cmeans(cont_vars_df[, -1], centers = 12)
+set.seed(42)
+cm_13 <- e1071::cmeans(cont_vars_df[, -1], centers = 13)
+set.seed(42)
+cm_14 <- e1071::cmeans(cont_vars_df[, -1], centers = 14)
+set.seed(42)
+cm_15 <- e1071::cmeans(cont_vars_df[, -1], centers = 15)
+
+invisible(purrr::map2(list(cm_03, cm_04, cm_05, cm_06, cm_07, cm_08, cm_09,
+                 cm_10, cm_11, cm_12, cm_13, cm_14, cm_15),
+            seq(3,15,1),
+            function(obj, i) {
+              out_name <- paste0('cmeans_', sprintf('%02d', i), '.rds')
+              saveRDS(obj, file.path('models', out_name))
+              }
+            ))
+```
+
+Now calculate and plot the F, H and S statistics for each model:
+
+```{r}
+fh_stats <- purrr::map2_dfr(list(cm_03, cm_04, cm_05, cm_06, 
+                                 cm_07, cm_08, cm_09, cm_10, 
+                                 cm_11, cm_12, cm_13, cm_14, cm_15),
+                seq(3,15,1), function(obj, i) {
+  f <- fclust::PC(obj[['membership']])
+  h <- fclust::PE(obj[['membership']])
+  s <- fclust::XB(Xca = cont_vars_df[, -1],
+                  U = obj[['membership']],
+                  H = obj[['centers']], m = 2)
+  # scaling functions from Burrough et al 2000, p. 40.
+  # note S doesn't need this treatment
+  scale_f <- (f - 1/i) / (1 - 1/i)
+  scale_h <- (h - (1 - f)) / (log(i) - (1 - f))
+  data.frame("N" = i,
+             "F" = scale_f, 
+             "H" = scale_h, 
+             "S" = s,
+             "fh_ratio" = round(f/h, 3))
+})
+```
+
+```{r}
+#| echo: false
+
+ggplot(pivot_longer(fh_stats, -c(fh_ratio, N))) +
+  geom_line(aes(x = N, y = value, group = name, colour = name),
+            size = 1) +
+  geom_point(aes(x = N, y = value, group = name, colour = name),
+             size = 2) +
+  scale_x_continuous(breaks = seq(3, 15)) +
+  scale_y_continuous(limits = c(0,1)) +
+  labs(colour = 'Statistic', x = 'cluster number', y = '',
+       title = 'F, H and S clustering performance statistics') +
+  theme_minimal()
+```
+
+These statistics are not promising, with F and H crossing early and S increasing steadily. This is potentially a result of the validity statistics (and the algorithm itself) being blind to spatial context. FCM can't simply be made spatially aware by e.g. adding cell center coordinates as clustering parameters; in fact, this generally makes things worse. Other R packages like `geocmeans` may do a much better job with spatial datasets.
