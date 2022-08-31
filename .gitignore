@@ -2,10 +2,10 @@
 .Rhistory
 .RData
 .Ruserdata
-data_spatial/
+
 settings.json
 *.rds
 junk.R
-*.png
+*.zip
 
 /.quarto/

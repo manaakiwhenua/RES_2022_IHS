@@ -1,0 +1,14 @@
+NumberOfClasses: 5 
+NumberOfVariables: 4 
+NumberOfIteration: 21 
+MaxError: 0.009319 
+ClassCentroids:
+Class1: (-7.916547, -1.996939, 61.421517, 21.776722)
+Class2: (-6.931924, -1.410533, 7.509943, 46.719911)
+Class3: (-9.106492, -2.201014, 5.456976, 62.678105)
+Class4: (-4.977471, 0.069747, 13.755001, 33.946243)
+Class5: (-8.301405, -2.441599, 30.230811, 30.037965)
+PartitionCoefficient: 0.488165 
+Entropy: 1.000493 
+PayOff: 1036871.439884 
+

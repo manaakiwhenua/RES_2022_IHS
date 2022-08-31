@@ -1,0 +1,19 @@
+Stability,ID,Name,Area,Average Fuzzy Membership Map
+5,11,4Class2-5Class3-6Class6-7Class1-8Class5,1077,pattern11.3dr
+5,1,4Class4-5Class1-6Class4-7Class4-8Class2,281,pattern1.3dr
+5,2,4Class3-5Class4-6Class3-7Class6-8Class8,127,pattern2.3dr
+5,3,4Class3-5Class2-6Class3-7Class6-8Class6,102,pattern3.3dr
+5,4,4Class3-5Class2-6Class5-7Class5-8Class6,71,pattern4.3dr
+5,7,4Class2-5Class2-6Class5-7Class5-8Class1,52,pattern7.3dr
+5,9,4Class1-5Class5-6Class1-7Class3-8Class3,7,pattern9.3dr
+4,12,4Class2-5Class3-7Class5-8Class1,116,pattern12.3dr
+4,10,4Class2-5Class3-6Class6-8Class1,37,pattern10.3dr
+4,13,4Class4-6Class2-7Class2-8Class7,31,pattern13.3dr
+4,8,4Class1-5Class4-6Class1-7Class3,26,pattern8.3dr
+4,15,4Class4-5Class1-7Class2-8Class7,24,pattern15.3dr
+4,5,5Class5-6Class2-7Class2-8Class7,18,pattern5.3dr
+4,6,4Class1-6Class1-7Class7-8Class4,3,pattern6.3dr
+4,14,4Class1-5Class5-6Class2-7Class2,1,pattern14.3dr
+4,16,4Class1-5Class5-6Class1-8Class4,1,pattern16.3dr
+3,17,4Class1-5Class4-7Class7,6,pattern17.3dr
+3,18,4Class3-5Class4-7Class7,1,pattern18.3dr
